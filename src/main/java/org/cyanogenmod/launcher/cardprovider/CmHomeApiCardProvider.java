@@ -1,10 +1,14 @@
 package org.cyanogenmod.launcher.cardprovider;
 
 import android.content.Context;
+import android.content.Intent;
 
 import org.cyanogenmod.launcher.cards.ApiCard;
+import org.cyanogenmod.launcher.cards.CmCard;
 import org.cyanogenmod.launcher.home.api.CMHomeApiManager;
-import org.cyanogenmod.launcher.home.api.cards.DataCard;
+import org.cyanogenmod.launcher.home.api.cards.CardData;
+import org.cyanogenmod.launcher.home.api.cards.CardData.CardDeletedInfo;
+import org.cyanogenmod.launcher.home.api.receiver.CmHomeCardChangeReceiver;
 
 import com.cyanogen.cardbuilder.DataCardBuilderFactory;
 
@@ -18,7 +22,13 @@ public class CmHomeApiCardProvider implements ICardProvider,
     private CMHomeApiManager mApiManager;
     private Context mCmHomeContext;
     private Context mHostActivityContext;
-    private List<CardProviderUpdateListener> mUpdateListeners = new ArrayList<CardProviderUpdateListener>();
+    private List<CardProviderUpdateListener> mUpdateListeners =
+                                            new ArrayList<CardProviderUpdateListener>();
+    private static final String CM_HOME_API_CARD_DELETED_BROADCAST_ACTION =
+                                            "org.cyanogenmod.launcher.home.api.CARD_DELETED";
+    private static final String CM_HOME_API_REFRESH_REQUESTED_BROADCAST_ACTION =
+                                            "org.cyanogenmod.launcher.home.api.REFRESH_REQUESTED";
+    public static final String CARD_AUTHORITY_APPEND_STRING = ".cmhomeapi";
 
     public CmHomeApiCardProvider(Context cmHomeContext, Context hostActivityContext) {
         mCmHomeContext = cmHomeContext;
@@ -49,14 +59,25 @@ public class CmHomeApiCardProvider implements ICardProvider,
     }
 
     @Override
+    public void onDestroy(Context context) {
+        mApiManager.destroy();
+    }
+
+    @Override
     public void requestRefresh() {
-        for (DataCard dataCard : mApiManager.getAllDataCards()) {
-            onCardInsertOrUpdate(dataCard.getGlobalId());
+        sendRefreshBroadcast();
+    }
+
+    private void sendRefreshBroadcast() {
+        if (mHostActivityContext != null) {
+            Intent broadcast = new Intent();
+            broadcast.setAction(CM_HOME_API_REFRESH_REQUESTED_BROADCAST_ACTION);
+            mHostActivityContext.sendBroadcast(broadcast);
         }
     }
 
-    private boolean cardExists(String globalId, List<Card> cards) {
-        for (Card card : cards) {
+    private boolean cardExists(String globalId, List<CmCard> cards) {
+        for (CmCard card : cards) {
             if (card instanceof ApiCard) {
                 ApiCard apiCard = (ApiCard) card;
                 if (apiCard.getId().equals(globalId)) {
@@ -67,14 +88,14 @@ public class CmHomeApiCardProvider implements ICardProvider,
         return false;
     }
     @Override
-    public CardProviderUpdateResult updateAndAddCards(List<Card> cards) {
-        List<Card> cardsToAdd = new ArrayList<Card>();
-        List<Card> cardsToRemove = new ArrayList<Card>();
+    public CardProviderUpdateResult updateAndAddCards(List<CmCard> cards) {
+        List<CmCard> cardsToAdd = new ArrayList<CmCard>();
+        List<CmCard> cardsToRemove = new ArrayList<CmCard>();
 
         // Add
-        for (DataCard dataCard : mApiManager.getAllDataCards()) {
-            if (!cardExists(dataCard.getGlobalId(), cards)) {
-                Card card = getCardFromDataCard(dataCard);
+        for (CardData cardData : mApiManager.getAllCardDatas()) {
+            if (!cardExists(cardData.getGlobalId(), cards)) {
+                CmCard card = getCardFromCardData(cardData);
                 if (card != null) {
                     cardsToAdd.add(card);
                 }
@@ -82,7 +103,7 @@ public class CmHomeApiCardProvider implements ICardProvider,
         }
 
         // Update and remove
-        for (Card card : cards) {
+        for (CmCard card : cards) {
             if (card instanceof ApiCard) {
                 ApiCard apiCard = (ApiCard) card;
                 long cardId = Long.parseLong(card.getId());
@@ -90,8 +111,8 @@ public class CmHomeApiCardProvider implements ICardProvider,
                 if (!cardExists) {
                     cardsToRemove.add(card);
                 } else {
-                    DataCard dataCard = mApiManager.getCard(apiCard.getApiAuthority(), cardId);
-                    apiCard.updateFromDataCard(dataCard);
+                    CardData cardData = mApiManager.getCard(apiCard.getApiAuthority(), cardId);
+                    apiCard.updateFromCardData(cardData);
                 }
             }
         }
@@ -100,44 +121,51 @@ public class CmHomeApiCardProvider implements ICardProvider,
     }
 
     @Override
-    public void updateCard(Card card) {
+    public void updateCard(CmCard card) {
         if (card instanceof ApiCard) {
             ApiCard apiCard = (ApiCard) card;
             long cardId = apiCard.getDbId();
-            DataCard dataCard = mApiManager.getCard(apiCard.getApiAuthority(), cardId);
-            if (dataCard != null) {
-                apiCard.updateFromDataCard(dataCard);
+            CardData cardData = mApiManager.getCard(apiCard.getApiAuthority(), cardId);
+
+            boolean stillMatches = apiCard.getMatcher().hasMatchingContent(cardData);
+            if (cardData != null && stillMatches) {
+                apiCard.updateFromCardData(cardData);
+            } else if (cardData != null) {
+                // The card no longer matches, we will remove it and add a new one.
+                onCardDelete(cardData.getGlobalId());
+                onCardInsertOrUpdate(cardData.getGlobalId());
             }
         }
     }
 
     @Override
-    public Card createCardForId(String id) {
-        DataCard dataCard = mApiManager.getCardWithGlobalId(id);
-        if (dataCard != null) {
-            return getCardFromDataCard(dataCard);
+    public CmCard createCardForId(String id) {
+        CardData cardData = mApiManager.getCardWithGlobalId(id);
+        if (cardData != null) {
+            return getCardFromCardData(cardData);
         }
         return null;
     }
 
     @Override
-    public List<Card> getCards() {
-        List<Card> listOfCards = new ArrayList<Card>();
+    public List<CmCard> getCards() {
+        List<CmCard> listOfCards = new ArrayList<CmCard>();
         if (mApiManager == null) {
             return listOfCards;
         }
-        List<DataCard> theCards = mApiManager.getAllDataCards();
+        List<CardData> theCards = mApiManager.getAllCardDatas();
 
-        for (DataCard dataCard : theCards) {
-            listOfCards.add(getCardFromDataCard(dataCard));
+        for (CardData cardData : theCards) {
+            listOfCards.add(getCardFromCardData(cardData));
         }
         return listOfCards;
     }
 
-    private Card getCardFromDataCard(DataCard dataCard) {
-        ApiCard card = (ApiCard) DataCardBuilderFactory.getCardForDataCard(mCmHomeContext, dataCard);
+    private CmCard getCardFromCardData(CardData cardData) {
+        ApiCard card = (ApiCard) DataCardBuilderFactory.getCardForCardData(mCmHomeContext,
+                                                                           cardData);
         if (card != null) {
-            card.updateFromDataCard(dataCard);
+            card.updateFromCardData(cardData);
         }
         return card;
     }
@@ -158,6 +186,28 @@ public class CmHomeApiCardProvider implements ICardProvider,
     public void onCardDelete(String globalId) {
         for (CardProviderUpdateListener listener : mUpdateListeners) {
             listener.onCardDelete(globalId);
+        }
+    }
+
+    public static void sendCardDeletedBroadcast(Context context, CardData deletedCardData) {
+        Intent broadcast = new Intent();
+        broadcast.setAction(CM_HOME_API_CARD_DELETED_BROADCAST_ACTION);
+        CardDeletedInfo deletedInfo = new CardDeletedInfo(deletedCardData.getId(),
+                                                          deletedCardData.getInternalId(),
+                                                          deletedCardData.getGlobalId(),
+                                                          deletedCardData.getAuthority());
+
+        broadcast.putExtra(CmHomeCardChangeReceiver.CARD_DATA_DELETED_INFO_BROADCAST_EXTRA,
+                           deletedInfo);
+
+        String authority = deletedCardData.getAuthority();
+
+        // API cards provider authorities are in the form of <package-name>.cmhomeapi
+        if (authority.contains(CARD_AUTHORITY_APPEND_STRING)) {
+            int cmhomeIndex = authority.indexOf(CARD_AUTHORITY_APPEND_STRING);
+            String appPackageName = deletedCardData.getGlobalId().substring(0, cmhomeIndex);
+            broadcast.setPackage(appPackageName);
+            context.sendBroadcast(broadcast);
         }
     }
 }

@@ -1,50 +1,73 @@
 package org.cyanogenmod.launcher.cards;
 
+import it.gmariotti.cardslib.library.internal.Card;
+import it.gmariotti.cardslib.library.internal.Card.OnUndoSwipeListListener;
+
+import org.cyanogenmod.launcher.cardprovider.CmHomeApiCardProvider;
+import org.cyanogenmod.launcher.home.api.cards.CardData;
+
 import android.content.Context;
 
-import org.cyanogenmod.launcher.home.api.cards.DataCard;
+public class ApiCard extends CmCard implements OnUndoSwipeListListener {
 
-import it.gmariotti.cardslib.library.internal.Card;
+    private CardData mCardData;
+    private ApiCardMatcher mMatcher;
 
-public class ApiCard extends Card {
-
-    private DataCard mDataCard;
-
-    public ApiCard(Context context, DataCard dataCard) {
+    public ApiCard(Context context, CardData cardData) {
         super(context);
-        init(dataCard);
+        init(cardData);
     }
 
-    public ApiCard(Context context, int innerLayout, DataCard dataCard) {
+    public ApiCard(Context context, int innerLayout, CardData cardData) {
         super(context, innerLayout);
-        init(dataCard);
+        init(cardData);
     }
 
-    private void init(DataCard dataCard) {
-        mDataCard = dataCard;
-        setSwipeable(true);
-        if (dataCard != null) {
-            setId(dataCard.getGlobalId());
-        }
+    public void setMatcher(ApiCardMatcher matcher) {
+        mMatcher = matcher;
+    }
+
+    public ApiCardMatcher getMatcher() {
+        return mMatcher;
+    }
+
+    private void init(CardData cardData) {
+        mCardData = cardData;
+        setId(cardData.getGlobalId());
+        setCategory(cardData.getCategory());
     }
 
     public void setApiAuthority(String authority) {
-        mDataCard.setAuthority(authority);
+        mCardData.setAuthority(authority);
     }
 
     public String getApiAuthority() {
-        return mDataCard.getAuthority();
+        return mCardData.getAuthority();
     }
 
     public long getDbId() {
-        return mDataCard.getId();
+        return mCardData.getId();
     }
 
-    public void updateFromDataCard(DataCard dataCard) {
-        mDataCard = dataCard;
+    public void updateFromCardData(CardData cardData) {
+        mCardData = cardData;
+        if (cardData != null) {
+            setId(cardData.getGlobalId());
+            setCategory(cardData.getCategory());
+        }
     }
 
-    public DataCard getDataCard() {
-        return mDataCard;
+    public CardData getCardData() {
+        return mCardData;
+    }
+
+    @Override
+    public void onUndoSwipe(Card card, boolean timedOut) {
+        if (mCardData != null && timedOut) {
+            boolean deleted = mCardData.unpublish(mContext);
+            if (deleted) {
+                CmHomeApiCardProvider.sendCardDeletedBroadcast(mContext, mCardData);
+            }
+        }
     }
 }

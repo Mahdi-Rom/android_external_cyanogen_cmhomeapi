@@ -12,12 +12,10 @@ import android.database.sqlite.SQLiteQueryBuilder;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
-import android.os.CancellationSignal;
 import android.os.ParcelFileDescriptor;
 import android.text.TextUtils;
 import android.util.Log;
 
-import org.cyanogenmod.launcher.home.api.cards.DataCardImage;
 import org.cyanogenmod.launcher.home.api.db.CmHomeDatabaseHelper;
 
 import java.io.ByteArrayOutputStream;
@@ -25,28 +23,48 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.math.BigInteger;
-import java.net.URI;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.UUID;
 
-import static org.cyanogenmod.launcher.home.api.db.CmHomeDatabaseHelper.DATA_CARD_IMAGE_TABLE_NAME;
-import static org.cyanogenmod.launcher.home.api.db.CmHomeDatabaseHelper.DATA_CARD_TABLE_NAME;
+import static org.cyanogenmod.launcher.home.api.db.CmHomeDatabaseHelper.CARD_DATA_IMAGE_TABLE_NAME;
+import static org.cyanogenmod.launcher.home.api.db.CmHomeDatabaseHelper.CARD_DATA_TABLE_NAME;
 
+/**
+ * <p>The ContentProvider that shares data for all types of Cards to CM Home.</p>
+ *
+ * <p><b>This ContentProvider is intended to be internal. When importing the CM Home SDK,
+ * you do not need to subclass or otherwise reference this ContentProvider,
+ * besides declaring it in your manifest.</b></p>
+ *
+ * <p>Be sure to declare this content provider as such:</p>
+ * <pre>
+ * {@code
+ *    <provider android:name="org.cyanogenmod.launcher.home.api.provider.CmHomeContentProvider"
+ *              android:label="@string/provider_name"
+ *              android:authorities="org.cyanogenmod.launcher.home.api.sdkexample.cmhomeapi"
+ *              android:enabled="true"
+ *              android:exported="true"
+ *              android:readPermission="org.cyanogenmod.launcher.home.api.FEED_READ"
+ *              android:writePermission="org.cyanogenmod.launcher.home.api.FEED_WRITE" />
+ * }
+ * </pre>
+ */
 public class CmHomeContentProvider extends ContentProvider {
     CmHomeDatabaseHelper mCmHomeDatabaseHelper;
-    public final static  String IMAGE_FILE_CACHE_DIR = "DataCardImageCache";
+    /**
+     * The internal storage directory where cached images will be stored.
+     */
+    public final static String IMAGE_FILE_CACHE_DIR = "CardDataImageCache";
 
-    private static final String TAG                   = "CmHomeContentProvider";
-    private static final int    DATA_CARD_LIST        = 1;
-    private static final int    DATA_CARD_ITEM        = 2;
-    private static final int    DATA_CARD_IMAGE_LIST  = 3;
-    private static final int    DATA_CARD_IMAGE_ITEM  = 4;
-    private static final int    IMAGE_FILE            = 5;
+    private static final String TAG                  = "CmHomeContentProvider";
+    private static final int    CARD_DATA_LIST       = 1;
+    private static final int    CARD_DATA_ITEM       = 2;
+    private static final int    CARD_DATA_IMAGE_LIST = 3;
+    private static final int    CARD_DATA_IMAGE_ITEM = 4;
+    private static final int    IMAGE_FILE           = 5;
     private static UriMatcher URI_MATCHER;
 
     static {
@@ -56,17 +74,17 @@ public class CmHomeContentProvider extends ContentProvider {
 
     private static void setupUriMatcher(String authority) {
         URI_MATCHER.addURI(CmHomeContract.AUTHORITY,
-                           CmHomeContract.DataCard.LIST_INSERT_UPDATE_URI_PATH,
-                           DATA_CARD_LIST);
+                           CmHomeContract.CardDataContract.LIST_INSERT_UPDATE_URI_PATH,
+                           CARD_DATA_LIST);
         URI_MATCHER.addURI(CmHomeContract.AUTHORITY,
-                           CmHomeContract.DataCard.SINGLE_ROW_INSERT_UPDATE_URI_PATH,
-                           DATA_CARD_ITEM);
+                           CmHomeContract.CardDataContract.SINGLE_ROW_INSERT_UPDATE_URI_PATH,
+                           CARD_DATA_ITEM);
         URI_MATCHER.addURI(CmHomeContract.AUTHORITY,
-                           CmHomeContract.DataCardImage.LIST_INSERT_UPDATE_URI_PATH,
-                           DATA_CARD_IMAGE_LIST);
+                           CmHomeContract.CardDataImageContract.LIST_INSERT_UPDATE_URI_PATH,
+                           CARD_DATA_IMAGE_LIST);
         URI_MATCHER.addURI(CmHomeContract.AUTHORITY,
-                           CmHomeContract.DataCardImage.SINGLE_ROW_INSERT_UPDATE_URI_PATH,
-                           DATA_CARD_IMAGE_ITEM);
+                           CmHomeContract.CardDataImageContract.SINGLE_ROW_INSERT_UPDATE_URI_PATH,
+                           CARD_DATA_IMAGE_ITEM);
         URI_MATCHER.addURI(CmHomeContract.AUTHORITY,
                            CmHomeContract.ImageFile.PATH + "/*",
                            IMAGE_FILE);
@@ -98,26 +116,26 @@ public class CmHomeContentProvider extends ContentProvider {
 
         int uriMatch = URI_MATCHER.match(uri);
         switch (uriMatch) {
-            case DATA_CARD_LIST:
-                queryBuilder.setTables(DATA_CARD_TABLE_NAME);
+            case CARD_DATA_LIST:
+                queryBuilder.setTables(CARD_DATA_TABLE_NAME);
                 if (TextUtils.isEmpty(sortOrder)) {
-                    sortOrder = CmHomeContract.DataCard.SORT_ORDER_DEFAULT;
+                    sortOrder = CmHomeContract.CardDataContract.SORT_ORDER_DEFAULT;
                 }
                 break;
-            case DATA_CARD_ITEM:
-                queryBuilder.setTables(DATA_CARD_TABLE_NAME);
-                queryBuilder.appendWhere(CmHomeContract.DataCard._ID + " = " + uri
+            case CARD_DATA_ITEM:
+                queryBuilder.setTables(CARD_DATA_TABLE_NAME);
+                queryBuilder.appendWhere(CmHomeContract.CardDataContract._ID + " = " + uri
                         .getLastPathSegment());
                 break;
-            case DATA_CARD_IMAGE_LIST:
-                queryBuilder.setTables(DATA_CARD_IMAGE_TABLE_NAME);
+            case CARD_DATA_IMAGE_LIST:
+                queryBuilder.setTables(CARD_DATA_IMAGE_TABLE_NAME);
                 if (TextUtils.isEmpty(sortOrder)) {
-                    sortOrder = CmHomeContract.DataCardImage.SORT_ORDER_DEFAULT;
+                    sortOrder = CmHomeContract.CardDataImageContract.SORT_ORDER_DEFAULT;
                 }
                 break;
-            case DATA_CARD_IMAGE_ITEM:
-                queryBuilder.setTables(DATA_CARD_IMAGE_TABLE_NAME);
-                queryBuilder.appendWhere(CmHomeContract.DataCardImage._ID + " = " + uri
+            case CARD_DATA_IMAGE_ITEM:
+                queryBuilder.setTables(CARD_DATA_IMAGE_TABLE_NAME);
+                queryBuilder.appendWhere(CmHomeContract.CardDataImageContract._ID + " = " + uri
                         .getLastPathSegment());
                 break;
             default:
@@ -153,36 +171,36 @@ public class CmHomeContentProvider extends ContentProvider {
         int uriMatch = URI_MATCHER.match(uri);
 
         switch (uriMatch) {
-            case DATA_CARD_LIST:
-                updateCount = db.update(DATA_CARD_TABLE_NAME,
+            case CARD_DATA_LIST:
+                updateCount = db.update(CARD_DATA_TABLE_NAME,
                                     values,
                                     selection,
                                     selectionArgs);
                 break;
-            case DATA_CARD_ITEM:
+            case CARD_DATA_ITEM:
                 String idStr = uri.getLastPathSegment();
-                String where = CmHomeContract.DataCard._ID + " = " + idStr;
+                String where = CmHomeContract.CardDataContract._ID + " = " + idStr;
                 if (!TextUtils.isEmpty(selection)) {
                     where += " AND " + selection;
                 }
-                updateCount = db.update(DATA_CARD_TABLE_NAME,
+                updateCount = db.update(CARD_DATA_TABLE_NAME,
                                             values,
                                             where,
                                             selectionArgs);
                 break;
-            case DATA_CARD_IMAGE_LIST:
-                updateCount = db.update(DATA_CARD_IMAGE_TABLE_NAME,
+            case CARD_DATA_IMAGE_LIST:
+                updateCount = db.update(CARD_DATA_IMAGE_TABLE_NAME,
                                     values,
                                     selection,
                                     selectionArgs);
                 break;
-            case DATA_CARD_IMAGE_ITEM:
+            case CARD_DATA_IMAGE_ITEM:
                 idStr = uri.getLastPathSegment();
-                where = CmHomeContract.DataCardImage._ID + " = " + idStr;
+                where = CmHomeContract.CardDataImageContract._ID + " = " + idStr;
                 if (!TextUtils.isEmpty(selection)) {
                     where += " AND " + selection;
                 }
-                updateCount = db.update(DATA_CARD_IMAGE_TABLE_NAME,
+                updateCount = db.update(CARD_DATA_IMAGE_TABLE_NAME,
                                         values,
                                         where,
                                         selectionArgs);
@@ -194,7 +212,7 @@ public class CmHomeContentProvider extends ContentProvider {
         if (updateCount > 0) {
             getContext().getContentResolver().notifyChange(uri, null);
         }
-        cleanupDataCardImageCache();
+        cleanupCardDataImageCache();
         return updateCount;
     }
 
@@ -204,24 +222,24 @@ public class CmHomeContentProvider extends ContentProvider {
 
         SQLiteDatabase db = mCmHomeDatabaseHelper.getWritableDatabase();
         switch (uriMatch) {
-            case DATA_CARD_LIST:
-                long id = db.insert(DATA_CARD_TABLE_NAME,
+            case CARD_DATA_LIST:
+                long id = db.insert(CARD_DATA_TABLE_NAME,
                                     null,
                                     values);
                 return getUriForId(id, uri);
-            case DATA_CARD_ITEM:
-                id = db.insertWithOnConflict(DATA_CARD_TABLE_NAME,
+            case CARD_DATA_ITEM:
+                id = db.insertWithOnConflict(CARD_DATA_TABLE_NAME,
                                                   null,
                                                   values,
                                                   SQLiteDatabase.CONFLICT_REPLACE);
                 return getUriForId(id, uri);
-            case DATA_CARD_IMAGE_LIST:
-                id = db.insert(DATA_CARD_IMAGE_TABLE_NAME,
+            case CARD_DATA_IMAGE_LIST:
+                id = db.insert(CARD_DATA_IMAGE_TABLE_NAME,
                                     null,
                                     values);
                 return getUriForId(id, uri);
-            case DATA_CARD_IMAGE_ITEM:
-                id = db.insertWithOnConflict(DATA_CARD_IMAGE_TABLE_NAME,
+            case CARD_DATA_IMAGE_ITEM:
+                id = db.insertWithOnConflict(CARD_DATA_IMAGE_TABLE_NAME,
                                                   null,
                                                   values,
                                                   SQLiteDatabase.CONFLICT_REPLACE);
@@ -239,31 +257,31 @@ public class CmHomeContentProvider extends ContentProvider {
         String idStr = uri.getLastPathSegment();
 
         switch (uriMatch) {
-            case DATA_CARD_LIST:
-                deleteCount = db.delete(DATA_CARD_TABLE_NAME,
+            case CARD_DATA_LIST:
+                deleteCount = db.delete(CARD_DATA_TABLE_NAME,
                                             selection,
                                             selectionArgs);
                 break;
-            case DATA_CARD_ITEM:
-                String where = CmHomeContract.DataCard._ID + " = " + idStr;
+            case CARD_DATA_ITEM:
+                String where = CmHomeContract.CardDataContract._ID + " = " + idStr;
                 if (!TextUtils.isEmpty(selection)) {
                     where += " AND " + selection;
                 }
-                deleteCount = db.delete(DATA_CARD_TABLE_NAME,
+                deleteCount = db.delete(CARD_DATA_TABLE_NAME,
                                             where,
                                             selectionArgs);
                 break;
-            case DATA_CARD_IMAGE_LIST:
-                deleteCount = db.delete(DATA_CARD_IMAGE_TABLE_NAME,
+            case CARD_DATA_IMAGE_LIST:
+                deleteCount = db.delete(CARD_DATA_IMAGE_TABLE_NAME,
                                         selection,
                                         selectionArgs);
                 break;
-            case DATA_CARD_IMAGE_ITEM:
-                where = CmHomeContract.DataCardImage._ID + " = " + idStr;
+            case CARD_DATA_IMAGE_ITEM:
+                where = CmHomeContract.CardDataImageContract._ID + " = " + idStr;
                 if (!TextUtils.isEmpty(selection)) {
                     where += " AND " + selection;
                 }
-                deleteCount = db.delete(DATA_CARD_IMAGE_TABLE_NAME,
+                deleteCount = db.delete(CARD_DATA_IMAGE_TABLE_NAME,
                                         where,
                                         selectionArgs);
                 break;
@@ -272,22 +290,22 @@ public class CmHomeContentProvider extends ContentProvider {
         }
 
         if (deleteCount == 1) {
-            if(uriMatch == DATA_CARD_ITEM) {
+            if(uriMatch == CARD_DATA_ITEM) {
                 // Notifies for a delete
                 getUriForId(Long.parseLong(idStr),
                             Uri.withAppendedPath(CmHomeContract.CONTENT_URI,
-                                    CmHomeContract.DataCard.SINGLE_ROW_DELETE_URI_PATH));
+                                    CmHomeContract.CardDataContract.SINGLE_ROW_DELETE_URI_PATH));
             }
-            if(uriMatch == DATA_CARD_IMAGE_ITEM) {
+            if(uriMatch == CARD_DATA_IMAGE_ITEM) {
                 // Notifies for a delete
-                getUriForId(Long.getLong(idStr),
+                getUriForId(Long.parseLong(idStr),
                             Uri.withAppendedPath(CmHomeContract.CONTENT_URI,
-                                    CmHomeContract.DataCardImage.SINGLE_ROW_DELETE_URI_PATH));
+                                    CmHomeContract.CardDataImageContract.SINGLE_ROW_DELETE_URI_PATH));
             }
         } else if (deleteCount > 1) {
             getContext().getContentResolver().notifyChange(uri, null);
         }
-        cleanupDataCardImageCache();
+        cleanupCardDataImageCache();
         return deleteCount;
     }
 
@@ -305,59 +323,56 @@ public class CmHomeContentProvider extends ContentProvider {
     public String getType(Uri uri) {
         int uriMatch = URI_MATCHER.match(uri);
         switch (uriMatch) {
-            case DATA_CARD_LIST:
-                return CmHomeContract.DataCard.CONTENT_TYPE;
-            case DATA_CARD_ITEM:
-                return CmHomeContract.DataCard.CONTENT_ITEM_TYPE;
-            case DATA_CARD_IMAGE_LIST:
-                return CmHomeContract.DataCardImage.CONTENT_TYPE;
-            case DATA_CARD_IMAGE_ITEM:
-                return CmHomeContract.DataCardImage.CONTENT_ITEM_TYPE;
+            case CARD_DATA_LIST:
+                return CmHomeContract.CardDataContract.CONTENT_TYPE;
+            case CARD_DATA_ITEM:
+                return CmHomeContract.CardDataContract.CONTENT_ITEM_TYPE;
+            case CARD_DATA_IMAGE_LIST:
+                return CmHomeContract.CardDataImageContract.CONTENT_TYPE;
+            case CARD_DATA_IMAGE_ITEM:
+                return CmHomeContract.CardDataImageContract.CONTENT_ITEM_TYPE;
             default:
                 throw new IllegalArgumentException("Unsupported URI: " + uri);
         }
     }
 
     /**
-     * For all files in the DataCardImage cache directory, if
+     * For all files in the CardDataImage cache directory, if
      * they are not represented in the database, delete them.
      */
-    private void cleanupDataCardImageCache() {
+    private void cleanupCardDataImageCache() {
         Set<String> filenames = new HashSet<String>();
 
-        // Handle DataCardImage rows
-        Cursor cursor = query(CmHomeContract.DataCardImage.CONTENT_URI,
-                                              CmHomeContract.DataCardImage.PROJECTION_ALL,
+        // Handle CardDataImage rows
+        Cursor cursor = query(CmHomeContract.CardDataImageContract.CONTENT_URI,
+                                              CmHomeContract.CardDataImageContract.PROJECTION_ALL,
                                               null,
                                               null,
                                               null);
         while(cursor.moveToNext()) {
             String uriString =
-                    cursor.getString(cursor.getColumnIndex(CmHomeContract
-                                                           .DataCardImage.IMAGE_URI_COL));
+                    cursor.getString(cursor.getColumnIndex(CmHomeContract.CardDataImageContract.IMAGE_URI_COL));
             if (uriString != null) {
                 String filename = Uri.parse(uriString).getLastPathSegment();
                 filenames.add(filename);
             }
         }
 
-        // Handle DataCard image fields
-        String[] dataCardProjection = {CmHomeContract.DataCard.AVATAR_IMAGE_URI_COL,
-                                     CmHomeContract.DataCard.CONTENT_SOURCE_IMAGE_URI_COL};
+        // Handle CardData image fields
+        String[] cardDataProjection = {CmHomeContract.CardDataContract.AVATAR_IMAGE_URI_COL,
+                                     CmHomeContract.CardDataContract.CONTENT_SOURCE_IMAGE_URI_COL};
 
-        cursor = query(CmHomeContract.DataCard.CONTENT_URI,
-                                              dataCardProjection,
+        cursor = query(CmHomeContract.CardDataContract.CONTENT_URI,
+                                              cardDataProjection,
                                               null,
                                               null,
                                               null);
 
         while(cursor.moveToNext()) {
             String contentSourceUri =
-                    cursor.getString(cursor.getColumnIndex(CmHomeContract
-                                                           .DataCard.CONTENT_SOURCE_IMAGE_URI_COL));
+                    cursor.getString(cursor.getColumnIndex(CmHomeContract.CardDataContract.CONTENT_SOURCE_IMAGE_URI_COL));
             String avatarUri =
-                    cursor.getString(cursor.getColumnIndex(CmHomeContract
-                                                           .DataCard.AVATAR_IMAGE_URI_COL));
+                    cursor.getString(cursor.getColumnIndex(CmHomeContract.CardDataContract.AVATAR_IMAGE_URI_COL));
             if (contentSourceUri != null) {
                 String filename = Uri.parse(contentSourceUri).getLastPathSegment();
                 filenames.add(filename);
@@ -415,14 +430,14 @@ public class CmHomeContentProvider extends ContentProvider {
     }
 
     /**
-     * Stores the given bitmap in internal storage in {@link org.cyanogenmod.launcher
-     * .home.api.provider.CmHomeContentProvider.IMAGE_FILE_CACHE_DIR} using an MD5 sum of the
-     * bitmap content as the filename, if the cache does not exist already.
-     * @param bitmap The Bitmap to store in the cache
-     * @param context A Context of the application that will share this image in this
-     *                ContentProvider.
+     * Stores the given bitmap in internal storage in {@link #IMAGE_FILE_CACHE_DIR} using an MD5
+     * sum of the bitmap content as the filename, if the cache does not exist already.
+     * @param bitmap The <a href="http://developer.android.com/reference/android/graphics/Bitmap.html">Bitmap</a>
+     *               to store in the cache.
+     * @param context A <a href="http://developer.android.com/reference/android/content/Context.html">Context</a>
+     *                of the application that will share this image in this ContentProvider.
      * @return A Uri pointing to the newly stored image file in the cache, or the existing image,
-     * if one is found.
+     *         if one is found.
      */
     public static Uri storeBitmapInCache(Bitmap bitmap, Context context) {
         FileOutputStream outputStream = null;
